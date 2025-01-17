@@ -27,7 +27,7 @@ class MeldDataset(Dataset):
             'positive': 2,
         }
         
-    def _load_frames(self, video_path):
+    def _load_frames(self, video_path: str) -> torch.FloatTensor:
         frames = np.zeros((30, 224, 224, 3), dtype=np.float32)
         
         frames_appended = 0
@@ -40,21 +40,28 @@ class MeldDataset(Dataset):
         try:
             
             total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            # print("Total frames in video:", total_frames)
+
+            seek_space = np.linspace(0, total_frames - 1, 30)
             
-            seek_space = np.linspace(0, total_frames, 30)
+            # print("seek space: ", seek_space)
             
             ret, frame = video_capture.read()
             
             if not ret or frame is None:
                 raise ValueError(f"Error loading video: {video_path}")
                 
-            for i in range(len(seek_space)-1):
+            for i in range(len(seek_space)):
                 
                 seek_to = round(seek_space[i])
+                
+                # print(f"Seeking to frame: {seek_to}")
                 
                 video_capture.set(cv2.CAP_PROP_POS_FRAMES, seek_to)
                    
                 ret, frame = video_capture.read()
+                
+                # print(f"Frame {i} : { 'Success' if ret else 'Failed' }")
                 
                 if not ret or frame is None:
                     break
@@ -98,13 +105,13 @@ class MeldDataset(Dataset):
         
         if not os.path.exists(video_path):
             print(f"Video not found: {video_path}")
-            return None
+            raise ValueError(f"Video not found: {video_path}")
         
         text_inputs = self.tokenizer(row['Utterance'], return_tensors="pt", padding='max_length', truncation=True, max_length=128)
         
         frames = self._load_frames(video_path)
         
-        print(frames)
+        # print(frames)
     
     
     
