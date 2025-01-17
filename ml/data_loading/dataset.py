@@ -1,3 +1,4 @@
+import wave
 import numpy as np
 from torch.utils.data import Dataset
 import torch
@@ -5,6 +6,8 @@ import pandas as pd
 from transformers import AutoTokenizer
 import cv2
 import os
+import subprocess
+import torchaudio
 class MeldDataset(Dataset):
     def __init__(self, csv_path: str, video_path: str) -> None:
         self.data = pd.read_csv(csv_path)
@@ -91,8 +94,68 @@ class MeldDataset(Dataset):
         # rearrange from np/cv2 to pytorch
         return torch.FloatTensor(frames).permute(0, 3, 1, 2)
             
-
+    def _load_audio(self, video_path: str) -> torch.FloatTensor:
+        audio_path = video_path.replace(".mp4", ".wav")
         
+        try:
+            subprocess.run(
+                [
+                    'ffmpeg',
+                    '-i',
+                    video_path,
+                    '-vn',
+                    '-acodec',
+                    'pcm_s16le',
+                    '-ar',
+                    '16000',
+                    '-ac',
+                    '1',
+                    audio_path
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            
+            waveform, sample_rate = torchaudio.load(audio_path)
+            
+            if sample_rate != 16000:
+                resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+                waveform = resampler(waveform)
+
+            mel_spectrogram = torchaudio.transforms.MelSpectrogram(
+                sample_rate=16000,
+                n_mels=64,
+                n_fft=1024,
+                hop_length=512,
+            )
+            
+            mel_spec = mel_spectrogram(waveform)
+            
+            mel_spec = ( mel_spec - mel_spec.mean()) / mel_spec.std()
+            
+            
+            if mel_spec.size(2) < 300:
+                padding = 300 - mel_spec.size(2)
+                mel_spec = torch.nn.functional.pad(mel_spec, (0, padding))
+            else:
+                mel_spec = mel_spec[:, :, :300]
+        
+        
+        except subprocess.CalledProcessError as e:
+            raise ValueError(f"Error loading audio: {audio_path}, error: {str(e)}")
+        
+                
+            
+            
+               
+        except Exception as e:
+            raise ValueError(f"Error loading audio: {audio_path}, error: {str(e)}")
+        
+        
+        finally:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
         
     def __len__(self):
         return len(self.data)
@@ -109,7 +172,9 @@ class MeldDataset(Dataset):
         
         text_inputs = self.tokenizer(row['Utterance'], return_tensors="pt", padding='max_length', truncation=True, max_length=128)
         
-        frames = self._load_frames(video_path)
+        # frames = self._load_frames(video_path)
+        
+        audio = self._load_audio(video_path)
         
         # print(frames)
     
